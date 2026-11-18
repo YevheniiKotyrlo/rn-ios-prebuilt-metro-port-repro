@@ -32,7 +32,8 @@ verdict() {
   served8090=$(grep -ac '^metro GET /index.bundle' "$dir/metro.log" 2>/dev/null) || served8090=0
   step "requests"
   echo "listener on 8081 got ${asked8081} request(s):"
-  { grep -a '^8081 ' "$dir/port8081.log" 2>/dev/null || true; } | sed 's/^/  /'
+  awk '/^8081 / { sub(/\?.*/, ""); if (!($0 in count)) order[n++] = $0; count[$0]++ }
+    END { for (i = 0; i < n; i++) printf "  %s (%d)\n", order[i], count[order[i]] }' "$dir/port8081.log" 2>/dev/null || true
   echo "Metro on ${PORT} got ${served8090} bundle request(s):"
   { grep '^metro ' "$dir/metro.log" 2>/dev/null || true; } | sed 's/^/  /'
   if [ "$served8090" -gt 0 ] && [ "$asked8081" -eq 0 ]; then
@@ -129,6 +130,12 @@ EOF
 : > "$OUT/port8081.log"
 python3 -u "$OUT/listen8081.py" >> "$OUT/port8081.log" 2> "$OUT/listen8081.err" &
 LISTENER=$!
+listening=""
+for _ in $(seq 1 30); do
+  listening=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/status) && [ "$listening" = 404 ] && break
+  sleep 1
+done
+[ "$listening" = 404 ] || inconclusive "the listener did not start on 8081"
 
 step "npx react-native start --port ${PORT}"
 (cd "$APPDIR" && exec npx react-native start --port "$PORT" --no-interactive) > "$OUT/metro.log" 2>&1 &
