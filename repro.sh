@@ -28,11 +28,11 @@ inconclusive() {
 
 verdict() {
   local dir="$1" asked8081 served8090
-  asked8081=$(grep -c '^8081 ' "$dir/port8081.log" 2>/dev/null) || asked8081=0
-  served8090=$(grep -c '^metro GET /index.bundle' "$dir/metro.log" 2>/dev/null) || served8090=0
+  asked8081=$(grep -ac '^8081 ' "$dir/port8081.log" 2>/dev/null) || asked8081=0
+  served8090=$(grep -ac '^metro GET /index.bundle' "$dir/metro.log" 2>/dev/null) || served8090=0
   step "requests"
   echo "listener on 8081 got ${asked8081} request(s):"
-  sed 's/^/  /' "$dir/port8081.log" 2>/dev/null
+  { grep -a '^8081 ' "$dir/port8081.log" 2>/dev/null || true; } | sed 's/^/  /'
   echo "Metro on ${PORT} got ${served8090} bundle request(s):"
   { grep '^metro ' "$dir/metro.log" 2>/dev/null || true; } | sed 's/^/  /'
   if [ "$served8090" -gt 0 ] && [ "$asked8081" -eq 0 ]; then
@@ -86,7 +86,7 @@ EOF
 
 step "bundle exec pod install"
 (cd "$APPDIR/ios" && bundle install && bundle exec pod install) > "$OUT/pod.log" 2>&1 || { tail -40 "$OUT/pod.log"; inconclusive "pod install"; }
-grep -m6 -E '\[ReactNativeCore\]|\[ReactNativeDependencies\]' "$OUT/pod.log" || true
+grep -E '\[(ReactNativeCore|ReactNativeDependencies)\] (Building from source|Using tarball)' "$OUT/pod.log" || true
 sources=$(find "$APPDIR/ios/Pods" -name RCTBundleURLProvider.mm) || sources=""
 echo "RCTBundleURLProvider.mm sources in Pods: ${sources:-none}"
 
@@ -125,7 +125,9 @@ class Server(http.server.ThreadingHTTPServer):
 
 Server(("::", 8081), Handler).serve_forever()
 EOF
-python3 -u "$OUT/listen8081.py" > "$OUT/port8081.log" 2> "$OUT/listen8081.err" &
+# Appended, so emptying the log before the launch leaves no hole where earlier lines were.
+: > "$OUT/port8081.log"
+python3 -u "$OUT/listen8081.py" >> "$OUT/port8081.log" 2> "$OUT/listen8081.err" &
 LISTENER=$!
 
 step "npx react-native start --port ${PORT}"
