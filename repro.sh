@@ -128,11 +128,14 @@ Server(("::", 8081), Handler).serve_forever()
 EOF
 # Appended, so emptying the log before the launch leaves no hole where earlier lines were.
 : > "$OUT/port8081.log"
+LISTENER=""
+METRO=""
+trap 'trap "" INT TERM HUP; kill ${LISTENER:+"$LISTENER"} ${METRO:+"$METRO"} 2>/dev/null' EXIT
 python3 -u "$OUT/listen8081.py" >> "$OUT/port8081.log" 2> "$OUT/listen8081.err" &
 LISTENER=$!
 listening=""
 for _ in $(seq 1 30); do
-  listening=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/status) && [ "$listening" = 404 ] && break
+  listening=$(curl -s -m 3 -o /dev/null -w '%{http_code}' http://localhost:8081/status) && [ "$listening" = 404 ] && break
   sleep 1
 done
 [ "$listening" = 404 ] || inconclusive "the listener did not start on 8081"
@@ -140,15 +143,14 @@ done
 step "npx react-native start --port ${PORT}"
 (cd "$APPDIR" && exec npx react-native start --port "$PORT" --no-interactive) > "$OUT/metro.log" 2>&1 &
 METRO=$!
-trap 'kill "$LISTENER" "$METRO" 2>/dev/null' EXIT
 status=""
 for _ in $(seq 1 60); do
-  status=$(curl -s "http://localhost:${PORT}/status") && [ "$status" = "packager-status:running" ] && break
+  status=$(curl -s -m 3 "http://localhost:${PORT}/status") && [ "$status" = "packager-status:running" ] && break
   sleep 2
 done
 echo "curl http://localhost:${PORT}/status -> ${status:-nothing}"
 [ "$status" = "packager-status:running" ] || inconclusive "Metro did not start on ${PORT}"
-code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/status) || code=none
+code=$(curl -s -m 3 -o /dev/null -w '%{http_code}' http://localhost:8081/status) || code=none
 echo "curl http://localhost:8081/status -> HTTP ${code}"
 : > "$OUT/port8081.log"
 
